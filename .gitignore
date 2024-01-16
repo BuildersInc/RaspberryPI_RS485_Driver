@@ -34,3 +34,9 @@
 *.exe
 *.out
 *.app
+
+*.cmd
+*.mod.*
+*.ko
+*.order
+*.symvers
