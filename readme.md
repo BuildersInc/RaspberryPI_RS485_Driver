@@ -14,8 +14,7 @@ The Pinout is as follows
 | DE        | GPIO27 / PIN13 | GPIO05 / PIN29 |
 | RE_N      | GPIO22 / PIN15 | GPIO06 / PIN31 |
 
-
-## Tutorial
+## Setup
 
 ```sh
 # Install the driver
@@ -25,3 +24,8 @@ sudo insmod raspi_rs485.ko
 sudo rmmod raspi_rs485
 
 ```
+
+## Important notes
+
+Currently working in 32 Bit Mode only
+Make sure in the /boot/config.txt to set "arm_64bit=0"
