@@ -29,3 +29,7 @@ sudo rmmod raspi_rs485
 
 Currently working in 32 Bit Mode only
 Make sure in the /boot/config.txt to set "arm_64bit=0"
+
+To use GPIO 0 and 1 "force_eeprom_read=0" in /boot/config.txt
+
+dtc -@ -I dts -O dtb -o test_overlay.dtbo test_overlay.dts
