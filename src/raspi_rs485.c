@@ -13,7 +13,7 @@
 // #include <linux/proberty.h>
 #include <linux/platform_device.h>
 #include <linux/of_device.h>
-
+#include <linux/serdev.h>
 
 
 #define DRIVER_NAME "RASPI_RS485"
@@ -47,8 +47,8 @@ struct raspi_rs485 CHANNEL_B = {
     .device = {}
 };
 
-static int dt_probe(struct platform_device *pdev);
-static int dt_remove(struct platform_device *pdev);
+static int serdev_echo_probe(struct serdev_device *serdev);
+static void serdev_echo_remove(struct serdev_device *serdev);
 
 static struct of_device_id my_driver_ids[] = {
 	{
@@ -56,25 +56,51 @@ static struct of_device_id my_driver_ids[] = {
 	}, { /* sentinel */ }
 };
 
-static struct platform_driver my_driver = {
-	.probe = dt_probe,
-	.remove = dt_remove,
+
+static int serdev_echo_recv(struct serdev_device *serdev, const unsigned char *buffer, size_t size) {
+	printk("serdev_echo - Received %ld bytes with \"%s\"\n", size, buffer);
+    return 	serdev_device_write_buf(serdev, buffer, size);
+}
+
+static const struct serdev_device_ops serdev_echo_ops = {
+	.receive_buf = serdev_echo_recv
+};
+
+static struct serdev_device_driver my_driver = {
+	.probe = serdev_echo_probe,
+	.remove = serdev_echo_remove,
 	.driver = {
 		.name = "RASPI_RS485",
 		.of_match_table = my_driver_ids,
 	},
 };
 
-static int dt_probe(struct platform_device *pdev)
-{
-    return 0;
+static int serdev_echo_probe(struct serdev_device *serdev) {
+	int status;
+	printk("serdev_echo - Now I am in the probe function!\n");
+
+	serdev_device_set_client_ops(serdev, &serdev_echo_ops);
+	status = serdev_device_open(serdev);
+	if(status) {
+		printk("serdev_echo - Error opening serial port!\n");
+		return -status;
+	}
+
+	serdev_device_set_baudrate(serdev, 9600);
+	serdev_device_set_flow_control(serdev, false);
+	serdev_device_set_parity(serdev, SERDEV_PARITY_NONE);
+
+	status = serdev_device_write_buf(serdev, "Type something: ", sizeof("Type something: "));
+	printk("serdev_echo - Wrote %d bytes.\n", status);
+
+	return 0;
 }
 
-static int dt_remove(struct platform_device *pdev)
-{
-    return 0;
+static void serdev_echo_remove(struct serdev_device *serdev) {
+	printk("serdev_echo - Now I am in the remove function\n");
+	serdev_device_write_buf(serdev, "Type something: ", sizeof("Type something: "));
+    serdev_device_close(serdev);
 }
-
 
 struct raspi_rs485* get_device_info(struct cdev* dev_cdev)
 {
@@ -99,13 +125,14 @@ static ssize_t driver_read(struct file *File, char *user_buffer, size_t count, l
 
     struct raspi_rs485 *device_info = get_device_info(File->f_inode->i_cdev);
     if (device_info == NULL) return -1;
-    gpio_set_low(device_info->TX_PIN);
-
+    gpio_set_low(device_info->DE_PIN);
+    // gpio_set_low(14);
+    logger_info("DRIVER-READ", "TURN OFF GPIO");
 
     to_copy = min(count, buffer_pointer);
     not_copied = copy_to_user(user_buffer, buffer, to_copy);
     delta = to_copy - not_copied;
-
+    // serdev_echo_recv(&serdev_device_driver, "HALLO WELT", sizeof("HALLO WELT"));
     return delta;
 }
 
@@ -123,8 +150,11 @@ static ssize_t driver_write(struct file *File, const char *user_buffer, size_t c
 	int to_copy, not_copied, delta;
     struct raspi_rs485 *device_info = get_device_info(File->f_inode->i_cdev);
     if (device_info == NULL) return -1;
-    gpio_set_high(device_info->TX_PIN);
-
+    gpio_set_high(device_info->DE_PIN);
+    logger_info("DRIVER-READ", "TURN ON GPIO");
+    
+    // gpio_set_high(14);
+    (*to_serdev_controller(device_info->device));
 	/* Get amount of data to copy */
 	to_copy = min(count, sizeof(buffer));
 
@@ -164,15 +194,15 @@ static struct file_operations fops = {
     .owner = THIS_MODULE,
     .open  = dev_open,
     .release = dev_close,
-    .read = driver_read,
+    // .read = driver_read,
     .write = driver_write
 };
 
 int setup_gpio(struct raspi_rs485* device_info)
 {
     int retval;
-    retval = gpio_load(device_info->TX_PIN, OUTPUT);
-    retval = gpio_load(device_info->RX_PIN, INPUT);
+    // retval = gpio_load(device_info->TX_PIN, OUTPUT);
+    // retval = gpio_load(device_info->RX_PIN, INPUT);
     retval = gpio_load(device_info->DE_PIN, OUTPUT);
     retval = gpio_load(device_info->RE_N_PIN, OUTPUT);
     return retval;
@@ -180,8 +210,8 @@ int setup_gpio(struct raspi_rs485* device_info)
 
 void remove_gpio(struct raspi_rs485* device_info)
 {
-    gpio_unload(device_info->TX_PIN);
-    gpio_unload(device_info->RX_PIN);
+    // gpio_unload(device_info->TX_PIN);
+    // gpio_unload(device_info->RX_PIN);
     gpio_unload(device_info->DE_PIN);
     gpio_unload(device_info->RE_N_PIN);
 }
@@ -199,7 +229,8 @@ static int create_device_file(struct raspi_rs485* device_info)
     // printk("ALLOC WAS SUCCESSFUL MAJOR: %d, MINOR: %d", device_info->device_number >> 20, my_device_nr & 0xFFFFF);
 
     // Create device class
-    if ((device_info->driver_class = class_create(THIS_MODULE, device_info->class_name )) == NULL)
+    // if ((device_info->driver_class = class_create(THIS_MODULE, device_info->class_name )) == NULL)
+    if ((device_info->driver_class = class_create(device_info->class_name )) == NULL)
     {
         logger_critical("DEVICE_REGISTER", "CLASS CREATE WENT WRONG");
         goto ClassError;
@@ -250,10 +281,13 @@ static int __init gpio_driver_init(void)
 {
     int retval = 0;
     logger_info("Main", "Entering Driver");
-
+	if(serdev_device_driver_register(&my_driver)) {
+		printk("serdev_echo - Error! Could not load driver\n");
+		return -1;
+	}
     retval = create_device_file(&CHANNEL_A);
     logger_info("Main", "Channel A Created");
-
+    
     retval = create_device_file(&CHANNEL_B);
     logger_info("Main", "Channel B Created");
 
@@ -269,6 +303,8 @@ static void __exit gpio_driver_exit(void)
     remove_device_file(&CHANNEL_A);
     remove_device_file(&CHANNEL_B);
     logger_info("Main", "Leaving Driver");
+    printk("serdev_echo - Unload driver");
+	serdev_device_driver_unregister(&my_driver);
 }
 
 MODULE_DEVICE_TABLE(of, my_driver_ids);

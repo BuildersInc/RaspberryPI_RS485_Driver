@@ -10,3 +10,5 @@ void gpio_set_level(unsigned int gpio_nr, GPIO_LEVEL level);
 void gpio_set_high(unsigned int gpio_nr);
 void gpio_set_low(unsigned int gpio_nr);
 void gpio_unload(unsigned int gpio_nr);
+
+int gpio_test(unsigned int gpio_nr);

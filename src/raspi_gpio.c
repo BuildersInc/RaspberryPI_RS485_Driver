@@ -1,9 +1,12 @@
 #include "raspi_gpio.h"
 #include "logger.h"
 
+
 #include <linux/gpio.h>
+#include <linux/kernel.h>
 
 #define GPIO_PORT_COUNT 28 // 0 -- 27
+#define GPIO_PORT_OFFSETT 512 // see "cat /sys/kernel/debug/gpio"
 
 typedef struct gpio_port {
     unsigned int gpio_nr;
@@ -26,8 +29,9 @@ void gpio_bank_init(void)
     {
         char label[20];
         sprintf(label, "rpi-gpio-%d", i);
+        // logger_info("GPIO-BANK-INIT", label);
         GPIO_PORTS.bank[i] = (gpio_port) {
-            .gpio_nr = i,
+            .gpio_nr = GPIO_PORT_OFFSETT + i,
             .label = label
         };
     }
@@ -41,21 +45,21 @@ int gpio_load(unsigned int gpio_nr, GPIO_DIRECTION direction)
     gpio_bank_init();
 
     port = GPIO_PORTS.bank[gpio_nr];
-    if (gpio_request(port.gpio_nr, port.label))
+    if ((retval = gpio_request(port.gpio_nr, port.label)))
     {
-        char tmp[50];
-        sprintf(tmp, "CANNOT REQUEST GPIO PORT %d", port.gpio_nr);
-        logger_info("GPIO", tmp);
+        char msg[50];
+        snprintf(msg, sizeof(msg), "CANNOT REQUEST GPIO PORT %d, %d", port.gpio_nr, retval);
+        logger_info("GPIO", msg);
         return -1;
     }
 
     switch (direction)
     {
         case OUTPUT:
-            retval = gpio_direction_output(gpio_nr, 0);
+            retval = gpio_direction_output(port.gpio_nr, 0);
             break;
         case INPUT:
-            retval = gpio_direction_input(gpio_nr);
+            retval = gpio_direction_input(port.gpio_nr);
             break;
         default:
             break;
@@ -66,26 +70,39 @@ int gpio_load(unsigned int gpio_nr, GPIO_DIRECTION direction)
         logger_info("GPIO", "CANNOT SET DIRECTION");
         return -1;
     }
-    return 0;
+    return gpio_test(gpio_nr);
 }
 
 void gpio_unload(unsigned int gpio_nr)
 {
-    gpio_set_value(gpio_nr, 0);
-    gpio_free(gpio_nr);
+    gpio_port port = GPIO_PORTS.bank[gpio_nr];
+    
+    gpio_set_value(port.gpio_nr, 0);
+    gpio_free(port.gpio_nr);
 }
 
 void gpio_set_level(unsigned int gpio_nr, GPIO_LEVEL level)
 {
-    gpio_set_value(gpio_nr, (int)level);
+    gpio_port port = GPIO_PORTS.bank[gpio_nr];
+    
+    gpio_set_value(port.gpio_nr, (int)level);
 }
 
 void gpio_set_high(unsigned int gpio_nr)
 {
     gpio_set_level(gpio_nr, GPIO_HIGH);
+    
 }
 
 void gpio_set_low(unsigned int gpio_nr)
 {
     gpio_set_level(gpio_nr, GPIO_LOW);
+}
+
+int gpio_test(unsigned int gpio_nr)
+{
+    
+    gpio_set_high(gpio_nr);
+    gpio_set_low(gpio_nr);
+    return 0;
 }

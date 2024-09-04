@@ -14,7 +14,10 @@ KDIR = /lib/modules/$(KERNEL)/build
 PWD = $(shell pwd)
 
 all:
+	rmmod raspi | true
 	make -C $(KDIR) M=$(PWD) modules
+	insmod raspi.ko
 
 clean:
+	rmmod raspi | true
 	make -C $(KDIR) M=$(PWD) clean
